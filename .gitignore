@@ -41,5 +41,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# film library (generated images + sqlite db)
-library/
+# film library (generated images + sqlite db) — anchored to the repo root; without the
+# leading slash this also matched src/app/(screens)/library/, silently excluding the
+# Library screen route from git entirely.
+/library/
