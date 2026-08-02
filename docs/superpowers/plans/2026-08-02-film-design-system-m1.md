@@ -799,7 +799,6 @@ export function latestRevisionId(tokenId: number): number {
 ```ts
 // tests/generate.test.ts
 import { describe, it, expect, vi } from 'vitest';
-import { execSync } from 'node:child_process';
 
 process.env.LIBRARY_ROOT = `/tmp/fds-gen-${process.pid}`;
 const PNG_1x1 = Buffer.from(
@@ -811,15 +810,18 @@ vi.mock('@/lib/gemini', () => ({
 
 describe('generation service', () => {
   it('runs the full loop: create -> run -> outputs linked, status done', async () => {
-    execSync('npx drizzle-kit push --force', { env: { ...process.env }, stdio: 'ignore' });
+    // IMPORT @/db FIRST: its client mkdir's LIBRARY_ROOT. drizzle-kit push does NOT
+    // create the parent dir and exits 0 anyway, so a push before this silently no-ops.
     const { db, tables } = await import('@/db');
+    const { execSync } = await import('node:child_process');
+    execSync('npx drizzle-kit push --force', { env: { ...process.env }, stdio: 'ignore' });
     const { saveImageFile } = await import('@/lib/store');
     const { createGeneration, runPending } = await import('@/lib/generate');
     const { eq } = await import('drizzle-orm');
 
-    const [e] = db.insert(tables.entities).values({ slug: 'mara', name: 'Mara', type: 'character' }).returning();
+    const [e] = db.insert(tables.entities).values({ slug: 'mara', name: 'Mara', type: 'character' }).returning().all();
     const f = await saveImageFile(PNG_1x1, 'png', 'imported');
-    const [img] = db.insert(tables.images).values({ ...f, source: 'imported' }).returning();
+    const [img] = db.insert(tables.images).values({ ...f, source: 'imported' }).returning().all();
     db.insert(tables.refs).values({ entityId: e.id, imageId: img.id, role: 'front', priority: 1 }).run();
 
     const genId = createGeneration({
@@ -869,10 +871,12 @@ export function createGeneration(input: CreateGenInput): number {
     scene: input.scene, aspectRatio: input.aspectRatio, resolution: input.resolution,
   });
 
+  // NOTE: .all() is required — drizzle-orm 0.45's .returning() is a QueryPromise,
+  // not synchronously iterable, so bare destructuring throws at runtime.
   const [gen] = db.insert(tables.generations).values({
     promptUser: input.scene, promptFinal, model: input.model,
     aspectRatio: input.aspectRatio, resolution: input.resolution, status: 'pending',
-  }).returning();
+  }).returning().all();
 
   for (const p of picks)
     db.insert(tables.generationInputs).values({ generationId: gen.id, imageId: p.imageId, entityId: p.entityId, slot: p.slot }).run();
@@ -926,7 +930,7 @@ export function retryGeneration(genId: number): number {
   const [fresh] = db.insert(tables.generations).values({
     promptUser: gen.promptUser, promptFinal: gen.promptFinal, model: gen.model,
     aspectRatio: gen.aspectRatio, resolution: gen.resolution, status: 'pending',
-  }).returning();
+  }).returning().all();
   for (const i of db.select().from(tables.generationInputs).where(eq(tables.generationInputs.generationId, genId)).all())
     db.insert(tables.generationInputs).values({ generationId: fresh.id, imageId: i.imageId, entityId: i.entityId, slot: i.slot }).run();
   for (const t of db.select().from(tables.generationTokens).where(eq(tables.generationTokens.generationId, genId)).all())
@@ -974,7 +978,7 @@ const entityIn = z.object({
 
 export async function createEntity(input: z.infer<typeof entityIn>) {
   const v = entityIn.parse(input);
-  const [e] = db.insert(tables.entities).values({ ...v, slug: slugify(v.name) }).returning();
+  const [e] = db.insert(tables.entities).values({ ...v, slug: slugify(v.name) }).returning().all();
   revalidatePath('/library');
   return { id: e.id, slug: e.slug };
 }
@@ -1099,7 +1103,7 @@ export async function POST(req: Request) {
   const buf = Buffer.from(await file.arrayBuffer());
   const saved = await saveImageFile(buf, ext, 'imported');
   const existing = db.select().from(tables.images).where(eq(tables.images.sha256, saved.sha256)).all()[0];
-  const img = existing ?? db.insert(tables.images).values({ ...saved, source: 'imported' }).returning()[0];
+  const img = existing ?? db.insert(tables.images).values({ ...saved, source: 'imported' }).returning().all()[0];
   return NextResponse.json({ imageId: img.id, deduped: Boolean(existing) });
 }
 ```
