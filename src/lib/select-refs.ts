@@ -12,7 +12,15 @@ export interface EntityWithRefs {
 export interface Pick { imageId: number; entityId: number; slot: Slot; }
 
 export function selectRefs(entities: EntityWithRefs[], model: ModelId): { picks: Pick[]; warnings: string[] } {
-  const caps = MODELS[model].caps;
+  // TODO(Task R2): this function only implements the legacy per-category "split" caps
+  // (Gemini). Pooled allocation (GPT Image 2 — one undifferentiated pool, deliberately
+  // under-filled) is a follow-up task; it will need a different selection strategy
+  // entirely, not just a different cap lookup.
+  const refPolicy = MODELS[model].refPolicy;
+  if (refPolicy.mode !== 'split') {
+    throw new Error('pooled reference policy not implemented yet');
+  }
+  const caps = refPolicy.caps;
   const warnings: string[] = [];
   const picks: Pick[] = [];
 
