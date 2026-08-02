@@ -62,6 +62,8 @@ export const generations = sqliteTable('generations', {
   model: text('model').notNull(),
   aspectRatio: text('aspect_ratio').notNull(),
   resolution: text('resolution').notNull(),
+  provider: text('provider'),
+  quality: text('quality'),
   status: text('status', { enum: ['pending', 'done', 'failed'] }).notNull().default('pending'),
   error: text('error'),
   durationMs: integer('duration_ms'),

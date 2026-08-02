@@ -12,10 +12,13 @@ vi.mock('@google/genai', () => ({
   GoogleGenAI: class { models = { generateContent }; constructor(_: unknown) {} },
 }));
 
-describe('generateImages', () => {
+describe('googleProvider.generate', () => {
   it('passes refs as inlineData parts before the prompt and extracts image buffers', async () => {
-    const { generateImages } = await import('@/lib/gemini');
-    const out = await generateImages({
+    const { googleProvider } = await import('@/lib/providers/google');
+    expect(googleProvider.name).toBe('google');
+    expect(googleProvider.envVar).toBe('GEMINI_API_KEY');
+
+    const out = await googleProvider.generate({
       model: 'gemini-3.1-flash-image-preview',
       prompt: 'a lantern',
       refs: [{ data: Buffer.from('img1'), mimeType: 'image/png' }],
@@ -29,5 +32,9 @@ describe('generateImages', () => {
     expect(parts[0].inlineData.mimeType).toBe('image/png');
     expect(parts.at(-1).text).toBe('a lantern');
     expect(call.config.responseModalities).toEqual(['TEXT', 'IMAGE']);
+    // New seam: aspectRatio/resolution now flow through resolveOutputSpec. For Google
+    // that mapper is a pure passthrough, so the resulting imageConfig must be identical
+    // to what was sent before the refactor.
+    expect(call.config.imageConfig).toEqual({ aspectRatio: '16:9', imageSize: '1K' });
   });
 });

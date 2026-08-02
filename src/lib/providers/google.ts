@@ -1,8 +1,6 @@
 import { GoogleGenAI } from '@google/genai';
-import type { ModelId } from '@/lib/models';
-
-export interface RefPayload { data: Buffer; mimeType: string; }
-export interface GeneratedImage { data: Buffer; mimeType: string; }
+import { resolveOutputSpec } from '@/lib/output-spec';
+import type { ImageProvider, GenerateRequest, GeneratedImage } from './types';
 
 const g = globalThis as unknown as { __fdsAi?: GoogleGenAI };
 function client() {
@@ -10,20 +8,22 @@ function client() {
   return (g.__fdsAi ??= new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }));
 }
 
-export async function generateImages(input: {
-  model: ModelId; prompt: string; refs: RefPayload[];
-  aspectRatio: string; resolution: string;
-}): Promise<GeneratedImage[]> {
+async function generate(req: GenerateRequest): Promise<GeneratedImage[]> {
+  const spec = resolveOutputSpec(req.model, req.aspectRatio, req.resolution, req.quality);
+  if (spec.provider !== 'google') {
+    throw new Error(`googleProvider.generate got a non-google output spec for model "${req.model}"`);
+  }
+
   const parts = [
-    ...input.refs.map(r => ({ inlineData: { mimeType: r.mimeType, data: r.data.toString('base64') } })),
-    { text: input.prompt },
+    ...req.refs.map(r => ({ inlineData: { mimeType: r.mimeType, data: r.data.toString('base64') } })),
+    { text: req.prompt },
   ];
   const res = await client().models.generateContent({
-    model: input.model,
+    model: req.model,
     contents: [{ role: 'user', parts }],
     config: {
       responseModalities: ['TEXT', 'IMAGE'],
-      imageConfig: { aspectRatio: input.aspectRatio, imageSize: input.resolution },
+      imageConfig: { aspectRatio: spec.aspectRatio, imageSize: spec.imageSize },
     },
   });
   const out: GeneratedImage[] = [];
@@ -36,3 +36,9 @@ export async function generateImages(input: {
   }
   return out;
 }
+
+export const googleProvider: ImageProvider = {
+  name: 'google',
+  envVar: 'GEMINI_API_KEY',
+  generate,
+};
