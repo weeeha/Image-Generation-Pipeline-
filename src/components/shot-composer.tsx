@@ -32,10 +32,24 @@ interface TokenView {
   value: string;
 }
 
+// Prefills the composer from a past generation — backs the History screen's "Use as
+// starting point" link (/generate?from=<id>). `quality` is intentionally optional/undefined
+// rather than required: not every model has a quality dial, and callers building this from
+// a stored generation may not have one to carry over.
+export interface ShotComposerInitial {
+  scene: string;
+  model: ModelId;
+  aspectRatio: string;
+  resolution: string;
+  quality?: string;
+  entityIds: number[];
+}
+
 interface ShotComposerProps {
   entities: EntityWithRefs[];
   tokens: TokenView[];
   availability: ModelAvailability;
+  initial?: ShotComposerInitial;
 }
 
 type GenStatus = 'pending' | 'done' | 'failed';
@@ -91,13 +105,18 @@ function refCountClass(e: EntityWithRefs): string {
   return 'text-muted-foreground/70';
 }
 
-export function ShotComposer({ entities, tokens, availability }: ShotComposerProps) {
-  const [selected, setSelected] = useState<number[]>([]);
-  const [scene, setScene] = useState('');
-  const [model, setModel] = useState<ModelId>(DEFAULT_MODEL);
-  const [aspect, setAspect] = useState('16:9');
-  const [resolution, setResolution] = useState('1K');
-  const [quality, setQuality] = useState<string | undefined>(undefined);
+export function ShotComposer({ entities, tokens, availability, initial }: ShotComposerProps) {
+  // Every field below falls back to exactly its old hardcoded default when `initial` is
+  // absent (a plain, non-prefilled /generate visit) — this prop is purely additive and
+  // changes nothing about that already-verified path.
+  const [selected, setSelected] = useState<number[]>(
+    () => initial?.entityIds.filter((id) => entities.some((e) => e.id === id)) ?? []
+  );
+  const [scene, setScene] = useState(initial?.scene ?? '');
+  const [model, setModel] = useState<ModelId>(initial?.model ?? DEFAULT_MODEL);
+  const [aspect, setAspect] = useState(initial?.aspectRatio ?? '16:9');
+  const [resolution, setResolution] = useState(initial?.resolution ?? '1K');
+  const [quality, setQuality] = useState<string | undefined>(initial?.quality);
   const [budget, setBudget] = useState(5); // only meaningful once a pooled model is active
   const [submitting, setSubmitting] = useState(false);
   const [retrying, setRetrying] = useState<number | null>(null);
